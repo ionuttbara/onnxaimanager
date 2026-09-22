@@ -1,0 +1,387 @@
+import { ListView, Button, LineEdit, ScrollView } from "std-widgets.slint";
+
+component SupportTag inherits Rectangle {
+    in property <string> text;
+    height: 24px;
+    border-radius: 12px;
+    background: text == "cuda" ? #568b1f :
+                text == "directml" ? #0b6ea8 :
+                text == "cpu" ? #3a5f91 :
+                text == "npu" ? #9a5d17 : #454b54;
+
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        Text {
+            text: root.text;
+            color: #f7f9fb;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component IntegrityTag inherits Rectangle {
+    in property <string> text;
+    height: 26px;
+    border-radius: 13px;
+    background: #183c31;
+    border-width: 1px;
+    border-color: #2d7058;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        Text {
+            text: root.text;
+            color: #9be7c4;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component StatCard inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    min-width: 175px;
+    height: 72px;
+    border-radius: 10px;
+    background: #22262d;
+    border-width: 1px;
+    border-color: #343a44;
+
+    VerticalLayout {
+        padding: 13px;
+        spacing: 4px;
+        Text { text: root.label; color: #8f98a6; font-size: 11px; font-weight: 600; }
+        Text { text: root.value; color: #f4f6f8; font-size: 17px; font-weight: 700; }
+    }
+}
+
+export struct ModelInfo {
+    name: string,
+    model_type: string,
+    used_for: string,
+    author: string,
+    size_formatted: string,
+    verification: string,
+    supports: [string],
+}
+
+export component MainWindow inherits Window {
+    preferred-width: 1080px;
+    preferred-height: 720px;
+    min-width: 760px;
+    min-height: 560px;
+    title: "AI Model Manager";
+    background: #17191d;
+    default-font-family: "Segoe UI Variable";
+
+    in property <[ModelInfo]> models;
+    in property <string> total_size_formatted;
+    in property <int> installed_count: 0;
+    in property <string> integrity_status: "No models";
+    in property <string> app_version: "";
+    in-out property <string> current_location;
+    in property <color> accent_color: #0078D7;
+
+    in-out property <bool> show_sysinfo: false;
+    in property <string> sysinfo_general: "";
+    in property <string> sysinfo_gpu: "";
+    in property <string> sysinfo_npu: "";
+    property <int> active_tab: 0;
+
+    in-out property <bool> show_about: false;
+    in-out property <bool> show_oobe: false;
+
+    in-out property <bool> show_error: false;
+    in property <string> error_text: "";
+
+    in-out property <bool> show_progress: false;
+    in property <float> progress_value: 0.0;
+    in property <string> progress_text: "Verifying model...";
+
+    in-out property <bool> show_install_confirm: false;
+    in property <ModelInfo> pending_model;
+    in property <string> pending_file_path;
+    in property <string> pending_verification: "";
+
+    callback open_folder();
+    callback open_link();
+    callback open_download_models();
+    callback refresh_models();
+    callback verify_model();
+    callback confirm_install();
+    callback remove_model(string);
+    callback request_sysinfo();
+    callback pick_oobe_folder();
+
+    VerticalLayout {
+        padding: 22px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            height: 54px;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 13px;
+                Image { source: @image-url("../logo.png"); width: 38px; height: 38px; image-fit: contain; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+                    Text { text: "AI Model Manager"; font-size: 24px; font-weight: 700; color: #f5f7fa; }
+                    Text {
+                        text: "ONNX model library manager";
+                        font-size: 12px;
+                        color: #8e97a5;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: "Download Models"; clicked => { root.open_download_models(); } }
+                Button { text: "System"; clicked => { root.request_sysinfo(); } }
+                Button { text: "About"; clicked => { root.show_about = true; } }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            StatCard { label: "INSTALLED"; value: root.installed_count + " models"; horizontal-stretch: 1; }
+            StatCard { label: "STORAGE USED"; value: root.total_size_formatted; horizontal-stretch: 1; }
+            StatCard { label: "INTEGRITY"; value: root.integrity_status; horizontal-stretch: 1; }
+        }
+
+        HorizontalLayout {
+            height: 34px;
+            Text { text: "Installed models"; color: #f4f6f8; font-size: 16px; font-weight: 700; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: "Refresh"; clicked => { root.refresh_models(); } }
+            Button { text: "+ Add Model"; primary: true; clicked => { root.verify_model(); } }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 10px;
+            background: #1c1f24;
+            border-width: 1px;
+            border-color: #303640;
+
+            if (root.installed_count == 0) : VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text { text: "No installed models found"; horizontal-alignment: center; color: #dce1e8; font-size: 18px; font-weight: 600; }
+                Text { text: "Add a supported ONNX model or ZIP model package."; horizontal-alignment: center; color: #8e97a5; font-size: 12px; }
+            }
+
+            if (root.installed_count > 0) : ListView {
+                width: 100%;
+                height: 100%;
+                for model in root.models : VerticalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+
+                    Rectangle {
+                        height: 122px;
+                        border-radius: 9px;
+                        background: card-touch.has-hover ? #292e36 : #24282f;
+                        border-width: 1px;
+                        border-color: card-touch.has-hover ? #46505e : #353c46;
+                        card-touch := TouchArea { }
+
+                        VerticalLayout {
+                            padding: 13px;
+                            spacing: 8px;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 3px;
+                                    Text { text: model.name; font-weight: 700; color: #f3f6f9; font-size: 14px; wrap: word-wrap; }
+                                    Text { text: model.author + "  /  " + model.model_type; font-size: 11px; color: #8e97a5; wrap: word-wrap; }
+                                }
+                                Text {
+                                    text: model.size_formatted;
+                                    color: #aeb7c3;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 54px; height: 32px; border-radius: 7px;
+                                    background: del-touch.has-hover ? #7b3035 : #343a43;
+                                    del-touch := TouchArea { clicked => { root.remove_model(model.name); } }
+                                    Text { text: "Remove"; color: #f3d7da; font-size: 9px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+
+                            Text {
+                                text: model.used_for;
+                                color: #d5dbe3;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                IntegrityTag { text: model.verification; }
+                                for tag in model.supports: SupportTag { text: tag; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 58px;
+            border-radius: 9px;
+            background: #20242a;
+            border-width: 1px;
+            border-color: #303640;
+            HorizontalLayout {
+                padding: 10px;
+                spacing: 9px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 3px;
+                    Text { text: "MODEL STORAGE"; color: #788291; font-size: 10px; font-weight: 700; }
+                    Text { text: root.current_location; color: #d7dce3; font-size: 12px; wrap: word-wrap; }
+                }
+                Button { text: "Open Folder"; clicked => { root.open_folder(); } }
+            }
+        }
+    }
+
+    if (root.show_sysinfo || root.show_error || root.show_progress || root.show_about || root.show_oobe || root.show_install_confirm) : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: root.show_oobe ? #17191d : rgba(0, 0, 0, 0.72);
+        TouchArea { width: 100%; height: 100%; }
+
+        if (root.show_oobe) : VerticalLayout {
+            alignment: center;
+            spacing: 22px;
+            HorizontalLayout {
+                alignment: center;
+                Image { source: @image-url("../logo.png"); width: 72px; height: 72px; image-fit: contain; }
+            }
+            Text { text: "Welcome to AI Model Manager"; font-size: 28px; font-weight: 700; horizontal-alignment: center; color: #f5f7fa; }
+            Text {
+                text: "Choose the folder that will contain your ONNX models.\nInstalled models are detected and verified automatically.";
+                font-size: 14px; horizontal-alignment: center; color: #9ba4b2;
+            }
+            HorizontalLayout { alignment: center; Button { text: "Choose Model Folder"; primary: true; clicked => { root.pick_oobe_folder(); } } }
+        }
+
+        if (!root.show_oobe) : VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+
+                if (root.show_about) : Rectangle {
+                    width: 460px; height: 250px;
+                    background: #24282f; border-radius: 10px; border-width: 1px; border-color: #414954;
+                    VerticalLayout {
+                        padding: 24px; spacing: 10px;
+                        Text { text: "AI Model Manager"; font-size: 21px; font-weight: 700; color: #f4f6f8; }
+                        Text { text: "Version " + root.app_version; font-size: 13px; color: #939dab; }
+                        Text { text: "Model validation is handled automatically."; font-size: 13px; color: #d3d9e0; wrap: word-wrap; }
+                        Text { text: "ONNXModelsDatabase author: ionuttbara"; font-size: 13px; color: #d3d9e0; }
+                        Text {
+                            text: "github.com/ionuttbara/onnxaimanager";
+                            color: #65b8ff; font-size: 13px;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.open_link(); } }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                        HorizontalLayout { alignment: end; Button { text: "Close"; clicked => { root.show_about = false; } } }
+                    }
+                }
+
+                if (root.show_sysinfo) : Rectangle {
+                    width: 650px; height: 510px;
+                    background: #24282f; border-radius: 10px; border-width: 1px; border-color: #414954;
+                    VerticalLayout {
+                        padding: 20px; spacing: 14px;
+                        Text { text: "System Information & AI Accelerators"; font-size: 19px; font-weight: 700; color: #f4f6f8; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: "General"; primary: root.active_tab == 0; clicked => { root.active_tab = 0; } }
+                            Button { text: "GPU"; primary: root.active_tab == 1; clicked => { root.active_tab = 1; } }
+                            Button { text: "NPU"; primary: root.active_tab == 2; clicked => { root.active_tab = 2; } }
+                        }
+                        Rectangle {
+                            background: #1a1d22; border-radius: 8px; border-width: 1px; border-color: #343a44; vertical-stretch: 1;
+                            VerticalLayout {
+                                padding: 12px;
+                                ScrollView {
+                                    width: 100%; height: 100%;
+                                    Text {
+                                        width: parent.width;
+                                        text: root.active_tab == 0 ? root.sysinfo_general : root.active_tab == 1 ? root.sysinfo_gpu : root.sysinfo_npu;
+                                        color: #d7dce3; font-size: 13px; wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout { alignment: end; Button { text: "Close"; clicked => { root.show_sysinfo = false; } } }
+                    }
+                }
+
+                if (root.show_install_confirm) : Rectangle {
+                    width: 500px; height: 285px;
+                    background: #24282f; border-radius: 10px; border-width: 1px; border-color: root.accent_color;
+                    VerticalLayout {
+                        padding: 22px; spacing: 9px;
+                        Text { text: "Install model"; font-size: 20px; font-weight: 700; color: #f4f6f8; }
+                        Text { text: root.pending_verification; color: #9be7c4; font-size: 12px; wrap: word-wrap; }
+                        Rectangle { height: 3px; }
+                        Text { text: root.pending_model.name; color: #e5e9ee; font-size: 14px; font-weight: 600; wrap: word-wrap; }
+                        Text { text: root.pending_model.used_for + "  /  " + root.pending_model.model_type; color: #b0b8c4; font-size: 12px; wrap: word-wrap; }
+                        Text { text: "Selected file size: " + root.pending_model.size_formatted; color: #b0b8c4; font-size: 12px; }
+                        IntegrityTag { text: root.pending_model.verification; }
+                        Rectangle { vertical-stretch: 1; }
+                        HorizontalLayout {
+                            alignment: end; spacing: 9px;
+                            Button { text: "Cancel"; clicked => { root.show_install_confirm = false; } }
+                            Button { text: "Install"; primary: true; clicked => { root.confirm_install(); } }
+                        }
+                    }
+                }
+
+                if (root.show_error) : Rectangle {
+                    width: 500px; height: 190px;
+                    background: #24282f; border-radius: 10px; border-width: 1px; border-color: #8d3d43;
+                    VerticalLayout {
+                        padding: 20px; spacing: 13px;
+                        Text { text: "Operation error"; font-size: 18px; font-weight: 700; color: #ff9299; }
+                        Text { text: root.error_text; color: #d9dee5; font-size: 13px; wrap: word-wrap; vertical-stretch: 1; }
+                        HorizontalLayout { alignment: end; Button { text: "OK"; clicked => { root.show_error = false; } } }
+                    }
+                }
+
+                if (root.show_progress) : Rectangle {
+                    width: 500px; height: 150px;
+                    background: #24282f; border-radius: 10px; border-width: 1px; border-color: #414954;
+                    VerticalLayout {
+                        padding: 20px; spacing: 14px;
+                        Text { text: root.progress_text; font-size: 14px; font-weight: 600; color: #f4f6f8; wrap: word-wrap; }
+                        Rectangle {
+                            height: 10px; border-radius: 5px; background: #3a4049;
+                            Rectangle { x: 0; width: parent.width * root.progress_value; height: 10px; border-radius: 5px; background: root.accent_color; }
+                        }
+                        Text { text: Math.round(root.progress_value * 100) + "%"; horizontal-alignment: right; font-size: 12px; color: #929baa; }
+                    }
+                }
+            }
+        }
+    }
+}
